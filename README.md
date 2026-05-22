@@ -18,7 +18,7 @@
 
 ## ✨ About
 
-这是一个用于存放日常脚本内容的自用仓库。  
+这是一个用于存放日常脚本内容的自用仓库。  
 内容以 **AI 辅助生成** 与手动整理为主，主要用于个人收集、测试、备份和简单归档。
 
 ---
@@ -56,6 +56,7 @@
 
 <div align="center">
 
-### `AI-assisted · Personal use · Lightweight archive`
+`AI-assisted · Personal use · Lightweight archive`
 
 </div>
+
