@@ -1,7 +1,7 @@
 /*********************************************
  元宝派 Bot 抢购脚本（统一版）
  功能：自动获取 Cookie（监听管理页）+ 有效性检查 + 并发抢购（仅晚8点）
- 版本：1.1.0
+ 版本：1.2.0
  作者：JK-GL
  支持：Loon
  更新：2026-06-11
@@ -81,28 +81,50 @@ function saveCookie(cookie) {
     $persistentStore.write(cookie, "yuanbao_cookie");
 }
 
-// ========== Cookie 有效性检查 ==========
+// ========== Cookie 有效性检查（改用 /api/getuserinfo） ==========
 async function verifyCookie(cookie) {
     if (!cookie) return false;
+    
+    // 确保 cookie 是字符串（如果是数组则用分号+空格拼接）
+    let cookieStr = cookie;
+    if (Array.isArray(cookie)) {
+        cookieStr = cookie.join('; ');
+    }
+    
     const headers = {
         "Host": "yuanbao.tencent.com",
         "Origin": "https://yuanbao.tencent.com",
         "Referer": "https://yuanbao.tencent.com/e/claw/manage",
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
-        "Cookie": cookie
+        "x-requested-with": "XMLHttpRequest",
+        "x-language": "zh-CN",
+        "Cookie": cookieStr
     };
-    const url = "https://yuanbao.tencent.com/api/v5/accountLogic/userInfo";
+    
+    const url = "https://yuanbao.tencent.com/api/getuserinfo";
     const resp = await getRequest(url, headers);
-    if (resp.error || resp.status !== 200) return false;
+    
+    if (resp.error || resp.status !== 200) {
+        console.log("❌ Cookie 验证请求失败: " + (resp.error || `HTTP ${resp.status}`));
+        return false;
+    }
+    
     try {
         const data = JSON.parse(resp.data);
+        // /api/getuserinfo 返回格式: {"code":0,"data":{"userId":"xxx",...}}
         if (data.code === 0 && data.data && data.data.userId) {
             console.log("✅ Cookie 有效，用户ID: " + data.data.userId);
             return true;
+        } else {
+            console.log("❌ Cookie 无效，接口返回: " + JSON.stringify(data));
+            return false;
         }
-    } catch (e) {}
-    return false;
+    } catch (e) {
+        console.log("❌ Cookie 验证响应解析失败: " + e.message);
+        return false;
+    }
 }
 
 // ========== 抢购核心（单协程） ==========
@@ -110,6 +132,11 @@ async function grabWorker() {
     const url = "https://yuanbao.tencent.com/api/v5/robotLogic/create";
     const cookie = getSavedCookie();
     if (!cookie) return false;
+    
+    // 同样处理 cookie 字符串格式
+    let cookieStr = cookie;
+    if (Array.isArray(cookie)) cookieStr = cookie.join('; ');
+    
     const headers = {
         "Host": "yuanbao.tencent.com",
         "Origin": "https://yuanbao.tencent.com",
@@ -117,9 +144,10 @@ async function grabWorker() {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) AppleWebKit/605.1.15",
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
-        "Cookie": cookie
+        "Cookie": cookieStr
     };
     const payload = { type: 1, create_type: 1 };
+    
     while (!stopFlag && !successFlag) {
         totalRequests++;
         const currentCount = totalRequests;
@@ -202,20 +230,23 @@ async function startGrabbing() {
 
 // ========== 脚本入口 ==========
 if (typeof $request !== 'undefined') {
-    // 重写模式：捕获 Cookie（支持管理页面或任意 API）
+    // 重写模式：捕获 Cookie（监听管理页面）
     let cookie = $request.headers["Cookie"] || $request.headers["cookie"];
-    let url = $request.url || "";
-    // 当请求的是管理页面时（也可根据实际情况放宽条件）
-    if (cookie && (url.includes("/e/claw/manage") || url.includes("/api/"))) {
-        if (cookie.includes("hy_token") && cookie.includes("hy_user")) {
-            saveCookie(cookie);
-            console.log("✅ 已保存元宝派 Cookie (来自 " + url + ")");
-            notify("元宝派", "Cookie 已自动更新");
+    if (cookie) {
+        // 处理数组格式
+        let cookieStr = Array.isArray(cookie) ? cookie.join('; ') : cookie;
+        let url = $request.url || "";
+        if (url.includes("/e/claw/manage") || url.includes("/api/")) {
+            if (cookieStr.includes("hy_token") && cookieStr.includes("hy_user")) {
+                saveCookie(cookieStr);
+                console.log("✅ 已保存元宝派 Cookie (来自 " + url + ")");
+                notify("元宝派", "Cookie 已自动更新");
+            } else {
+                console.log("⚠️ Cookie 缺少必要字段，可能未登录");
+            }
         } else {
-            console.log("⚠️ Cookie 缺少必要字段，可能未登录");
+            console.log("ℹ️ 未匹配到关键路径，不保存 Cookie");
         }
-    } else if (cookie) {
-        console.log("ℹ️ 未匹配到关键路径，不保存 Cookie");
     } else {
         console.log("ℹ️ 未提取到 Cookie");
     }
