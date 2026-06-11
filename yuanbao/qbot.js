@@ -1,41 +1,35 @@
 /*********************************************
  元宝派 Bot 抢购脚本（统一版）
- 功能：自动获取 Cookie + 有效性检查 + 并发抢购免费 Bot（仅晚8点）
- 版本：1.0.0
+ 功能：自动获取 Cookie（监听管理页）+ 有效性检查 + 并发抢购（仅晚8点）
+ 版本：1.1.0
  作者：JK-GL
  支持：Loon
  更新：2026-06-11
 
- 【Loon 配置 - 一键导入方法】
- 1. 添加脚本订阅：
-    配置 → 脚本 → 订阅脚本 → 添加 URL：
-    https://raw.githubusercontent.com/JK-GL/wulawulai/main/yuanbao/qbot.js
- 2. 脚本会自动生成以下任务和复写，无需手动添加。
-
- 【手动配置（如果不想用订阅）】
+ 【Loon 配置】
  [MITM]
  hostname = yuanbao.tencent.com
 
  [Script]
  # 定时任务（晚8点场）
  cron "55 19 * * *" script-path=https://raw.githubusercontent.com/JK-GL/wulawulai/main/yuanbao/qbot.js, tag=元宝派-晚8点场
- # 自动更新 Cookie（匹配所有 api 请求）
- http-request ^https:\/\/yuanbao\.tencent\.com\/api\/.* script-path=https://raw.githubusercontent.com/JK-GL/wulawulai/main/yuanbao/qbot.js, tag=元宝派-自动更新Cookie
+
+ # 自动获取 Cookie（监听管理页面）
+ http-request ^https:\/\/yuanbao\.tencent\.com\/e\/claw\/manage script-path=https://raw.githubusercontent.com/JK-GL/wulawulai/main/yuanbao/qbot.js, tag=元宝派-自动更新Cookie
 
  【使用步骤】
- 1. 确保 Loon 的 MitM 已开启，并安装信任证书。
- 2. 在 Safari 中登录 https://yuanbao.tencent.com/e/claw/manage，脚本会自动捕获 Cookie。
- 3. 手动运行一次脚本（定时任务模式）以验证 Cookie 是否有效。
- 4. 每天 19:55 会自动启动抢购流程。
-
- 注意：本脚本同时支持重写（捕获 Cookie）和定时任务（抢购）。
+ 1. 开启 MitM，添加 hostname: yuanbao.tencent.com，安装并信任证书。
+ 2. 添加上述两条 Script 规则（一条 cron，一条 http-request）。
+ 3. 在 Safari 中打开 https://yuanbao.tencent.com/e/claw/manage 并登录。
+ 4. 脚本会自动捕获 Cookie 并存储。
+ 5. 每天 19:55 自动抢购 20:00 场次。
 *********************************************/
 
 // ========== 配置参数 ==========
-const ADVANCE_SECONDS = 20;       // 提前20秒开始抢
-const MAX_RETRY_SECONDS = 120;    // 整点后抢120秒
-const THREAD_COUNT = 20;          // 并发数
-const REQUEST_INTERVAL_MS = 50;   // 请求间隔（毫秒）
+const ADVANCE_SECONDS = 20;
+const MAX_RETRY_SECONDS = 120;
+const THREAD_COUNT = 20;
+const REQUEST_INTERVAL_MS = 50;
 
 // ========== 全局变量 ==========
 let successFlag = false;
@@ -157,8 +151,8 @@ async function grabWorker() {
 async function startGrabbing() {
     const cookie = getSavedCookie();
     if (!cookie) {
-        console.log("❌ 未找到 Cookie，请先登录元宝派触发重写规则");
-        notify("元宝派抢购失败", "未找到 Cookie，请先登录网页版");
+        console.log("❌ 未找到 Cookie，请先访问管理页面触发重写");
+        notify("元宝派抢购失败", "未找到 Cookie，请先登录管理页面");
         return false;
     }
     console.log("🔍 验证 Cookie...");
@@ -206,16 +200,22 @@ async function startGrabbing() {
     return successFlag;
 }
 
-// ========== 脚本入口：根据运行环境自动选择模式 ==========
+// ========== 脚本入口 ==========
 if (typeof $request !== 'undefined') {
-    // 重写模式：捕获 Cookie
+    // 重写模式：捕获 Cookie（支持管理页面或任意 API）
     let cookie = $request.headers["Cookie"] || $request.headers["cookie"];
-    if (cookie && cookie.includes("hy_token") && cookie.includes("hy_user")) {
-        saveCookie(cookie);
-        console.log("✅ 已保存元宝派 Cookie");
-        notify("元宝派", "Cookie 已自动更新");
+    let url = $request.url || "";
+    // 当请求的是管理页面时（也可根据实际情况放宽条件）
+    if (cookie && (url.includes("/e/claw/manage") || url.includes("/api/"))) {
+        if (cookie.includes("hy_token") && cookie.includes("hy_user")) {
+            saveCookie(cookie);
+            console.log("✅ 已保存元宝派 Cookie (来自 " + url + ")");
+            notify("元宝派", "Cookie 已自动更新");
+        } else {
+            console.log("⚠️ Cookie 缺少必要字段，可能未登录");
+        }
     } else if (cookie) {
-        console.log("⚠️ 捕获到 Cookie 但缺少必要字段，可能未登录");
+        console.log("ℹ️ 未匹配到关键路径，不保存 Cookie");
     } else {
         console.log("ℹ️ 未提取到 Cookie");
     }
